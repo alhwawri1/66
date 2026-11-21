@@ -1,0 +1,41 @@
+workflows:
+  ios-unsigned-ipa:
+    name: Masareef iOS Unsigned Build (with Widget)
+    max_build_duration: 30
+    environment:
+      xcode: latest
+      node: latest
+    scripts:
+      - name: Install dependencies, sync Capacitor iOS & attach Widget Extension
+        script: |
+          set -e
+          npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+          if [ ! -d "ios" ]; then
+            ./node_modules/.bin/cap add ios
+          fi
+          ./node_modules/.bin/cap sync ios
+
+          if [ -f "ios-widget/WidgetBridgePlugin.swift" ] && [ -d "ios/App/App" ]; then
+            cp ios-widget/WidgetBridgePlugin.swift ios/App/App/WidgetBridgePlugin.swift
+          fi
+
+          python3 scripts/add_widget_target.py ios/App/App.xcodeproj
+      - name: Build unsigned iOS archive & IPA (including Widget Extension)
+        script: |
+          set -e
+          cd ios/App
+          xcodebuild clean archive \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -archivePath $CM_BUILD_DIR/App.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=NO
+
+          mkdir -p $CM_BUILD_DIR/ipa/Payload
+          cp -R $CM_BUILD_DIR/App.xcarchive/Products/Applications/App.app $CM_BUILD_DIR/ipa/Payload/
+          cd $CM_BUILD_DIR/ipa
+          zip -qry $CM_BUILD_DIR/Masareef-unsigned.ipa Payload
+    artifacts:
+      - $CM_BUILD_DIR/Masareef-unsigned.ipa
